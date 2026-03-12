@@ -26,16 +26,8 @@ jobs:
             -archivePath build/ZenSync.xcarchive \
             archive
 
-      - name: Export
-        run: |
-          xcodebuild \
-            -exportArchive \
-            -archivePath build/ZenSync.xcarchive \
-            -exportPath build/export \
-            -exportOptionsPlist ExportOptions.plist
-
       - name: Zip
-        run: cd build/export && zip -r ../../ZenSync.zip ZenSync.app
+        run: cd build/ZenSync.xcarchive/Products/Applications && zip -r ../../../../ZenSync.zip ZenSync.app
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

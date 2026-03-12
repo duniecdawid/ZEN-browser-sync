@@ -64,8 +64,24 @@ rsync -a --delete \
   --exclude="cache/" \
   --exclude="storage/" \
   --exclude="sessionstore-backups/" \
+  --exclude="sessionstore-logs/" \
   --exclude="crashes/" \
-  --exclude="*.lock"
+  --exclude="datareporting/" \
+  --exclude="gmp-*/" \
+  --exclude="security_state/" \
+  --exclude="*.lock" \
+  --exclude=".parentlock" \
+  --exclude="*.sqlite-wal" \
+  --exclude="*.sqlite-journal" \
+  --exclude="places.sqlite" \
+  --exclude="favicons.sqlite" \
+  --exclude="cookies.sqlite" \
+  --exclude="formhistory.sqlite" \
+  --exclude="sessionstore.jsonlz4" \
+  --exclude="sessionCheckpoints.json" \
+  --exclude="weave/" \
+  --exclude="key4.db" \
+  --exclude="cert9.db"
 ```
 
 ## Constraints

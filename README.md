@@ -4,7 +4,7 @@ A lightweight macOS menu bar app that automatically syncs your [Zen Browser](htt
 
 ## The Problem
 
-Zen Browser doesn't have built-in profile sync. If you use Zen on multiple Macs, your bookmarks, history, extensions, and settings are stuck on whichever machine you used last. You're left manually copying files or just accepting that your browsers will slowly drift apart.
+Zen Browser is built on Firefox, and while Firefox Sync works for bookmarks, history, and passwords, it doesn't sync the things that make Zen special — your workspace layouts, sidebar configuration, custom CSS themes, and Zen-specific settings. If you use Zen on multiple Macs, the core Firefox data follows you but the Zen experience doesn't.
 
 ## How ZenSync Fixes It
 

@@ -55,7 +55,7 @@ Release triggered by version tags: `git tag v1.0.0 && git push --tags`
 - **Background poll (Zen not running):** Check iCloud every 60s, pull if newer
 - **On Zen quit:** Push profile to iCloud, backup locally, prune backups >30 days
 - **On Zen launch:** Stop polling
-- **Zen bundle ID:** `app.zen.browser`
+- **Zen bundle ID:** `app.zen-browser.zen`
 
 ## rsync Flags
 

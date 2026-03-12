@@ -5,7 +5,7 @@ struct SyncConfig: Codable {
 }
 
 final class SyncEngine {
-    static let zenBundleID = "app.zen.browser"
+    static let zenBundleID = "app.zen-browser.zen"
 
     static let iCloudFolder: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -163,7 +163,7 @@ final class SyncEngine {
 
     static func launchZen() {
         let config = NSWorkspace.OpenConfiguration()
-        let zenURL = URL(fileURLWithPath: "/Applications/Zen Browser.app")
+        let zenURL = URL(fileURLWithPath: "/Applications/Zen.app")
         NSWorkspace.shared.openApplication(at: zenURL, configuration: config) { _, error in
             if let error = error {
                 Logger.shared.log("Failed to launch Zen: \(error.localizedDescription)", level: .error)

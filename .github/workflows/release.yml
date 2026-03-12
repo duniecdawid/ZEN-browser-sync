@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Archive
+        run: |
+          xcodebuild \
+            -scheme ZenSync \
+            -configuration Release \
+            -archivePath build/ZenSync.xcarchive \
+            archive
+
+      - name: Export
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/ZenSync.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist
+
+      - name: Zip
+        run: cd build/export && zip -r ../../ZenSync.zip ZenSync.app
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ZenSync.zip
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

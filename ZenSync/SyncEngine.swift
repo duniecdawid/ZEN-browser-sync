@@ -21,7 +21,38 @@ final class SyncEngine {
 
     static func zenProfilePath() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let profilesDir = home.appendingPathComponent("Library/Application Support/zen/Profiles")
+        let zenDir = home.appendingPathComponent("Library/Application Support/zen")
+        let profilesDir = zenDir.appendingPathComponent("Profiles")
+
+        // Try to read profiles.ini to find the active release profile
+        let profilesIni = zenDir.appendingPathComponent("profiles.ini")
+        if let ini = try? String(contentsOf: profilesIni, encoding: .utf8) {
+            // Find [Install*] sections — the Default= value is the active profile path
+            var activeReleasePath: String?
+            var inInstallSection = false
+            for line in ini.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("[") {
+                    inInstallSection = trimmed.hasPrefix("[Install")
+                    continue
+                }
+                if inInstallSection && trimmed.hasPrefix("Default=") {
+                    let path = String(trimmed.dropFirst("Default=".count))
+                    if path.contains("Default (release)") {
+                        activeReleasePath = path
+                    }
+                }
+            }
+            if let relPath = activeReleasePath {
+                let resolved = zenDir.appendingPathComponent(relPath)
+                if FileManager.default.fileExists(atPath: resolved.path) {
+                    Logger.shared.log("Resolved profile from profiles.ini: \(resolved.lastPathComponent)")
+                    return resolved
+                }
+            }
+        }
+
+        // Fallback: scan for any profile matching Default (release) pattern
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: profilesDir,
             includingPropertiesForKeys: nil
@@ -29,7 +60,11 @@ final class SyncEngine {
             Logger.shared.log("Zen Profiles directory not found", level: .error)
             return nil
         }
-        return contents.first { $0.lastPathComponent.hasSuffix(".Default (release)") }
+        let matches = contents.filter {
+            $0.lastPathComponent.contains(".Default (release)")
+        }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        // Prefer the highest suffix (-1, -2) as Zen creates those when reassigning
+        return matches.first
     }
 
     // MARK: - rsync

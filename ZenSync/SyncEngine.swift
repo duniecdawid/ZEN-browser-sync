@@ -77,9 +77,11 @@ final class SyncEngine {
         process.arguments = [
             "-a", "--delete",
             "--exclude=cache/",
-            "--exclude=storage/default/http*",
-            "--exclude=storage/default/moz*",
-            "--exclude=storage/temporary/",
+            "--include=storage/",
+            "--include=storage/default/",
+            "--include=storage/default/chrome/",
+            "--include=storage/default/chrome/**",
+            "--exclude=storage/**",
             "--exclude=sessionstore-backups/",
             "--exclude=sessionstore-logs/",
             "--exclude=crashes/",
@@ -123,11 +125,28 @@ final class SyncEngine {
         return true
     }
 
+    static func cleanICloudStorageLegacy() {
+        let fm = FileManager.default
+        let storageDir = iCloudFolder.appendingPathComponent("storage")
+        let junk = [
+            storageDir.appendingPathComponent("permanent"),
+            storageDir.appendingPathComponent("temporary"),
+            storageDir.appendingPathComponent("ls-archive.sqlite"),
+        ]
+        for url in junk {
+            if fm.fileExists(atPath: url.path) {
+                try? fm.removeItem(at: url)
+                Logger.shared.log("Cleaned legacy iCloud file: \(url.lastPathComponent)")
+            }
+        }
+    }
+
     static func push() -> Bool {
         guard let profile = zenProfilePath() else {
             Logger.shared.log("Cannot push: Zen profile not found", level: .error)
             return false
         }
+        cleanICloudStorageLegacy()
         Logger.shared.log("Pushing profile to iCloud")
         return runRsync(source: profile, destination: iCloudFolder)
     }

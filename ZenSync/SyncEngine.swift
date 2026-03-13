@@ -47,7 +47,9 @@ final class SyncEngine {
         process.arguments = [
             "-a", "--delete",
             "--exclude=cache/",
-            "--exclude=storage/",
+            "--exclude=storage/default/http*",
+            "--exclude=storage/default/moz*",
+            "--exclude=storage/temporary/",
             "--exclude=sessionstore-backups/",
             "--exclude=sessionstore-logs/",
             "--exclude=crashes/",

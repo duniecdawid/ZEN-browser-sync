@@ -50,7 +50,7 @@ final class FirstRunWindow: NSWindow {
     @objc private func primaryClicked() {
         Logger.shared.log("First run: user chose Primary (push local to iCloud)")
         DispatchQueue.global(qos: .userInitiated).async {
-            let success = SyncEngine.push()
+            let success = SyncEngine.pushVersioned()
             DispatchQueue.main.async { [self] in
                 if !success {
                     Logger.shared.log("First run push failed", level: .error)
@@ -63,7 +63,7 @@ final class FirstRunWindow: NSWindow {
     @objc private func secondaryClicked() {
         Logger.shared.log("First run: user chose Secondary (pull iCloud to local)")
         DispatchQueue.global(qos: .userInitiated).async {
-            let success = SyncEngine.pull()
+            let success = SyncEngine.pullVersioned()
             DispatchQueue.main.async { [self] in
                 if !success {
                     Logger.shared.log("First run pull failed", level: .error)

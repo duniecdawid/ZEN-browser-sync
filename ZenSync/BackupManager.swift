@@ -69,7 +69,7 @@ final class BackupManager {
         guard SyncEngine.runRsync(source: source, destination: profile) else { return false }
 
         // Push restored profile to iCloud
-        guard SyncEngine.push() else {
+        guard SyncEngine.pushVersioned() else {
             Logger.shared.log("Restore succeeded but push to iCloud failed", level: .warning)
             return true
         }

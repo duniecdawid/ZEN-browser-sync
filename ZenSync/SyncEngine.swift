@@ -2,6 +2,18 @@ import AppKit
 
 struct SyncConfig: Codable {
     var firstRunDone: Bool
+    var currentVersionId: String?
+}
+
+struct VersionEntry: Codable {
+    let id: String          // "2026-03-19-001"
+    let timestamp: String   // ISO 8601
+    let machineId: String
+}
+
+struct VersionManifest: Codable {
+    var schemaVersion: Int = 1
+    var latest: VersionEntry?
 }
 
 final class SyncEngine {
@@ -10,6 +22,10 @@ final class SyncEngine {
     static let iCloudFolder: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/ZenSync")
+    }()
+
+    static let manifestFile: URL = {
+        iCloudFolder.appendingPathComponent("manifest.json")
     }()
 
     static let configFile: URL = {
@@ -98,6 +114,7 @@ final class SyncEngine {
             "--exclude=weave/",
             "--exclude=key4.db",
             "--exclude=cert9.db",
+            "--exclude=manifest.json",
             sourcePath,
             destPath
         ]
@@ -138,7 +155,7 @@ final class SyncEngine {
         }
     }
 
-    static func push() -> Bool {
+    private static func push() -> Bool {
         guard let profile = zenProfilePath() else {
             Logger.shared.log("Cannot push: Zen profile not found", level: .error)
             return false
@@ -148,7 +165,7 @@ final class SyncEngine {
         return runRsync(source: profile, destination: iCloudFolder)
     }
 
-    static func pull() -> Bool {
+    private static func pull() -> Bool {
         guard let profile = zenProfilePath() else {
             Logger.shared.log("Cannot pull: Zen profile not found", level: .error)
             return false
@@ -159,6 +176,116 @@ final class SyncEngine {
         }
         Logger.shared.log("Pulling iCloud to profile")
         return runRsync(source: iCloudFolder, destination: profile)
+    }
+
+    // MARK: - Versioned Sync
+
+    static func pushVersioned() -> Bool {
+        guard push() else { return false }
+
+        var manifest = readManifest()
+        let versionId = nextVersionId(manifest: manifest)
+        let entry = VersionEntry(
+            id: versionId,
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            machineId: Host.current().localizedName ?? "Unknown"
+        )
+        manifest.latest = entry
+        writeManifest(manifest)
+
+        var config = readConfig()
+        config.currentVersionId = versionId
+        writeConfig(config)
+
+        Logger.shared.log("Pushed version \(versionId)")
+        return true
+    }
+
+    static func pullVersioned() -> Bool {
+        guard pull() else { return false }
+
+        let manifest = readManifest()
+        var config = readConfig()
+        config.currentVersionId = manifest.latest?.id
+        writeConfig(config)
+
+        Logger.shared.log("Pulled version \(manifest.latest?.id ?? "unknown")")
+        return true
+    }
+
+    // MARK: - Manifest
+
+    static func readManifest() -> VersionManifest {
+        guard let data = try? Data(contentsOf: manifestFile),
+              let manifest = try? JSONDecoder().decode(VersionManifest.self, from: data) else {
+            return VersionManifest()
+        }
+        return manifest
+    }
+
+    static func writeManifest(_ manifest: VersionManifest) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(manifest) else { return }
+        try? FileManager.default.createDirectory(
+            at: iCloudFolder,
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: manifestFile)
+    }
+
+    static func nextVersionId(manifest: VersionManifest) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        let today = df.string(from: Date())
+
+        if let latestId = manifest.latest?.id,
+           latestId.hasPrefix(today),
+           let lastPart = latestId.split(separator: "-").last,
+           let num = Int(lastPart) {
+            return String(format: "%@-%03d", today, num + 1)
+        }
+        return "\(today)-001"
+    }
+
+    static func latestICloudVersion() -> VersionEntry? {
+        readManifest().latest
+    }
+
+    static func hasNewerVersion() -> Bool {
+        let config = readConfig()
+        guard let remoteId = readManifest().latest?.id else { return false }
+        return config.currentVersionId != remoteId
+    }
+
+    // MARK: - Migration
+
+    static func migrateIfNeeded() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: iCloudFolder.path),
+              !iCloudFolderIsEmpty(),
+              !fm.fileExists(atPath: manifestFile.path) else { return }
+
+        Logger.shared.log("Migrating existing iCloud data to versioned format")
+
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        let versionId = "\(df.string(from: Date()))-001"
+
+        let entry = VersionEntry(
+            id: versionId,
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            machineId: Host.current().localizedName ?? "Unknown"
+        )
+        var manifest = VersionManifest()
+        manifest.latest = entry
+        writeManifest(manifest)
+
+        var config = readConfig()
+        config.currentVersionId = versionId
+        writeConfig(config)
+
+        Logger.shared.log("Migration complete: assigned version \(versionId)")
     }
 
     // MARK: - iCloud Stubs
@@ -177,23 +304,6 @@ final class SyncEngine {
         return false
     }
 
-    // MARK: - Freshness Check
-
-    static func iCloudIsNewer() -> Bool {
-        guard let profile = zenProfilePath() else { return false }
-        let sentinel = "prefs.js"
-        let iCloudFile = iCloudFolder.appendingPathComponent(sentinel)
-        let localFile = profile.appendingPathComponent(sentinel)
-
-        guard let iCloudDate = modDate(of: iCloudFile),
-              let localDate = modDate(of: localFile) else { return false }
-
-        return iCloudDate > localDate
-    }
-
-    private static func modDate(of url: URL) -> Date? {
-        try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
-    }
 
     // MARK: - Zen Process
 

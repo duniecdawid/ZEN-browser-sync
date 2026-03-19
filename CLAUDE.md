@@ -1,6 +1,6 @@
 # ZenSync
 
-macOS menu bar agent (Swift, AppKit) that automatically syncs the Zen Browser profile via iCloud Drive. Watches for Zen launching/quitting via NSWorkspace notifications, pulls before launch and pushes after quit.
+macOS menu bar agent (Swift, AppKit) that manually syncs the Zen Browser profile via iCloud Drive. User triggers Push/Pull from the menu bar. Each push creates a versioned snapshot (YYYY-MM-DD-NNN) tracked in a manifest.json on iCloud.
 
 ## Tech Stack
 
@@ -52,9 +52,11 @@ Release triggered by version tags: `git tag v1.0.0 && git push --tags`
 
 ## Core Behavior
 
-- **Background poll (Zen not running):** Check iCloud every 60s, pull if newer
-- **On Zen quit:** Push profile to iCloud, backup locally, prune backups >30 days
-- **On Zen launch:** Stop polling
+- **Manual sync only:** User clicks "Push to iCloud" or "Pull from iCloud" in menu bar
+- **Versioning:** Each push assigns a version ID (YYYY-MM-DD-NNN) stored in `manifest.json` on iCloud
+- **Menu displays:** Local version, iCloud version, and whether a newer version is available (checked on menu open via NSMenuDelegate)
+- **On Zen quit:** State returns to ready (no auto-sync)
+- **On Zen launch:** Push/Pull disabled in menu
 - **Zen bundle ID:** `app.zen-browser.zen`
 
 ## rsync Flags
@@ -81,7 +83,8 @@ rsync -a --delete \
   --exclude="sessionCheckpoints.json" \
   --exclude="weave/" \
   --exclude="key4.db" \
-  --exclude="cert9.db"
+  --exclude="cert9.db" \
+  --exclude="manifest.json"
 ```
 
 ## Constraints

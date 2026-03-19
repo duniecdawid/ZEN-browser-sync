@@ -9,11 +9,13 @@ enum SyncState {
     case error
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
-    private var statusMenuItem: NSMenuItem!
+    private var localVersionItem: NSMenuItem!
+    private var iCloudVersionItem: NSMenuItem!
+    private var pushMenuItem: NSMenuItem!
+    private var pullMenuItem: NSMenuItem!
     private var restoreMenuItem: NSMenuItem!
-    private var pollTimer: Timer?
     private var state: SyncState = .ready {
         didSet { updateStatusDisplay() }
     }
@@ -26,11 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
+        SyncEngine.migrateIfNeeded()
         setupStatusBar()
         setupWorkspaceObservers()
         LaunchAgent.registerLoginItem()
 
-        // Check if Zen is already running
         if SyncEngine.isZenRunning() {
             state = .zenRunning
         } else {
@@ -44,14 +46,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         let menu = NSMenu()
+        menu.delegate = self
 
-        statusMenuItem = NSMenuItem(title: "Ready", action: nil, keyEquivalent: "")
-        statusMenuItem.isEnabled = false
-        menu.addItem(statusMenuItem)
+        localVersionItem = NSMenuItem(title: "Local: –", action: nil, keyEquivalent: "")
+        localVersionItem.isEnabled = false
+        menu.addItem(localVersionItem)
+
+        iCloudVersionItem = NSMenuItem(title: "iCloud: –", action: nil, keyEquivalent: "")
+        iCloudVersionItem.isEnabled = false
+        menu.addItem(iCloudVersionItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        menu.addItem(NSMenuItem(title: "Force Sync", action: #selector(forceSyncClicked), keyEquivalent: ""))
+        pushMenuItem = NSMenuItem(title: "Push to iCloud", action: #selector(pushClicked), keyEquivalent: "")
+        menu.addItem(pushMenuItem)
+
+        pullMenuItem = NSMenuItem(title: "Pull from iCloud", action: #selector(pullClicked), keyEquivalent: "")
+        menu.addItem(pullMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
 
         restoreMenuItem = NSMenuItem(title: "Restore Backup\u{2026}", action: #selector(restoreClicked), keyEquivalent: "")
         menu.addItem(restoreMenuItem)
@@ -64,32 +77,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusDisplay()
     }
 
+    // MARK: - NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshVersionDisplay()
+    }
+
+    private func refreshVersionDisplay() {
+        let config = SyncEngine.readConfig()
+        let localId = config.currentVersionId
+
+        if let localId = localId {
+            localVersionItem.title = "Local: v\(localId)"
+        } else {
+            localVersionItem.title = "Local: not synced"
+        }
+
+        if let remote = SyncEngine.latestICloudVersion() {
+            if remote.id != localId {
+                iCloudVersionItem.title = "iCloud: v\(remote.id) \u{2191} newer"
+            } else {
+                iCloudVersionItem.title = "iCloud: up to date"
+            }
+        } else {
+            iCloudVersionItem.title = "iCloud: no data"
+        }
+    }
+
     private func updateStatusDisplay() {
         DispatchQueue.main.async { [self] in
+            let syncing = state == .pushing || state == .pulling
+            let zenRunning = state == .zenRunning
+
             switch state {
             case .ready:
                 statusItem.button?.title = "\u{1F9D8} Ready"
-                statusMenuItem.title = "Ready"
                 restoreMenuItem.isEnabled = true
                 restoreMenuItem.toolTip = nil
             case .pulling:
                 statusItem.button?.title = "\u{2B07}\u{FE0E} Syncing\u{2026}"
-                statusMenuItem.title = "Pulling from iCloud\u{2026}"
                 restoreMenuItem.isEnabled = false
             case .zenRunning:
                 statusItem.button?.title = "\u{1F9D8} Zen"
-                statusMenuItem.title = "Zen is running"
                 restoreMenuItem.isEnabled = false
                 restoreMenuItem.toolTip = "Close Zen first"
             case .pushing:
                 statusItem.button?.title = "\u{2B06}\u{FE0E} Syncing\u{2026}"
-                statusMenuItem.title = "Pushing to iCloud\u{2026}"
                 restoreMenuItem.isEnabled = false
             case .error:
                 statusItem.button?.title = "\u{26A0}\u{FE0F} ZenSync"
-                statusMenuItem.title = "Error \u{2014} check log"
                 restoreMenuItem.isEnabled = !SyncEngine.isZenRunning()
             }
+
+            pushMenuItem.isEnabled = !syncing && !zenRunning
+            pullMenuItem.isEnabled = !syncing && !zenRunning
         }
     }
 
@@ -118,7 +159,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               app.bundleIdentifier == SyncEngine.zenBundleID else { return }
 
         Logger.shared.log("Zen launched")
-        stopPolling()
         state = .zenRunning
     }
 
@@ -127,62 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               app.bundleIdentifier == SyncEngine.zenBundleID else { return }
 
         Logger.shared.log("Zen quit")
-        state = .pushing
-
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            let pushOk = SyncEngine.push()
-            if !pushOk {
-                sendNotification(title: "ZenSync", body: "Push failed after Zen quit")
-                DispatchQueue.main.async { self.state = .error }
-            }
-
-            let _ = BackupManager.shared.backup()
-            BackupManager.shared.pruneOldBackups()
-
-            DispatchQueue.main.async { [self] in
-                if pushOk { state = .ready }
-                startPolling()
-            }
-        }
-    }
-
-    // MARK: - Polling
-
-    private func startPolling() {
-        stopPolling()
-        Logger.shared.log("Starting poll timer")
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.pollCheck()
-        }
-        // Run immediately on start
-        pollCheck()
-    }
-
-    private func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
-    }
-
-    private func pollCheck() {
-        DispatchQueue.global(qos: .utility).async { [self] in
-            guard !SyncEngine.hasICloudStubs() else {
-                Logger.shared.log("iCloud stubs detected, skipping poll", level: .warning)
-                return
-            }
-            guard SyncEngine.iCloudIsNewer() else { return }
-
-            DispatchQueue.main.async { self.state = .pulling }
-            let ok = SyncEngine.pull()
-            DispatchQueue.main.async { [self] in
-                if ok {
-                    state = .ready
-                    Logger.shared.log("Background pull completed")
-                } else {
-                    state = .error
-                    sendNotification(title: "ZenSync", body: "Pull failed")
-                }
-            }
-        }
+        state = .ready
     }
 
     // MARK: - First Run
@@ -191,8 +176,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = SyncEngine.readConfig()
         if !config.firstRunDone && SyncEngine.iCloudFolderIsEmpty() {
             showFirstRun()
-        } else {
-            startPolling()
         }
     }
 
@@ -200,7 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         firstRunWindow = FirstRunWindow()
         firstRunWindow?.onComplete = { [weak self] in
             self?.firstRunWindow = nil
-            self?.startPolling()
         }
         firstRunWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -208,42 +190,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu Actions
 
-    @objc private func forceSyncClicked() {
-        let alert = NSAlert()
-        alert.messageText = "Force Sync"
-        alert.informativeText = "Which version should win?"
-        alert.addButton(withTitle: "\u{2191} This Mac \u{2192} iCloud")
-        alert.addButton(withTitle: "\u{2193} iCloud \u{2192} This Mac")
-        alert.addButton(withTitle: "Cancel")
-
-        let response = alert.runModal()
-        guard response != .alertThirdButtonReturn else { return }
-
-        let pushDirection = response == .alertFirstButtonReturn
+    @objc private func pushClicked() {
         let wasRunning = SyncEngine.isZenRunning()
 
         let doSync = { [self] in
-            stopPolling()
-            state = pushDirection ? .pushing : .pulling
+            state = .pushing
 
             DispatchQueue.global(qos: .userInitiated).async { [self] in
-                let ok: Bool
-                if pushDirection {
-                    ok = SyncEngine.push()
-                } else {
-                    ok = SyncEngine.pull()
-                }
+                let ok = SyncEngine.pushVersioned()
 
                 DispatchQueue.main.async { [self] in
                     if ok {
                         state = .ready
-                        Logger.shared.log("Force sync completed")
+                        Logger.shared.log("Push completed")
                         if wasRunning { SyncEngine.launchZen() }
                     } else {
                         state = .error
-                        sendNotification(title: "ZenSync", body: "Force sync failed")
+                        sendNotification(title: "ZenSync", body: "Push failed")
                     }
-                    startPolling()
+                }
+            }
+        }
+
+        if wasRunning {
+            SyncEngine.quitZen { [self] graceful in
+                DispatchQueue.main.async {
+                    if graceful {
+                        doSync()
+                    } else {
+                        self.showForceQuitAlert(then: doSync)
+                    }
+                }
+            }
+        } else {
+            doSync()
+        }
+    }
+
+    @objc private func pullClicked() {
+        let wasRunning = SyncEngine.isZenRunning()
+
+        let doSync = { [self] in
+            self.state = .pulling
+
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                let ok = SyncEngine.pullVersioned()
+
+                DispatchQueue.main.async { [self] in
+                    if ok {
+                        state = .ready
+                        Logger.shared.log("Pull completed")
+                        if wasRunning { SyncEngine.launchZen() }
+                    } else {
+                        state = .error
+                        sendNotification(title: "ZenSync", body: "Pull failed")
+                    }
                 }
             }
         }
@@ -277,7 +278,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }) {
                 zenApp.forceTerminate()
             }
-            // Small delay to let the process exit
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 action()
             }

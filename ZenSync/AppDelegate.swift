@@ -240,7 +240,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     if ok {
                         state = .ready
                         Logger.shared.log("Pull completed")
-                        if wasRunning { SyncEngine.launchZen() }
+                        if wasRunning {
+                            // Delay relaunch so Zen reads the freshly pulled session data
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                SyncEngine.launchZen()
+                            }
+                        }
                     } else {
                         state = .error
                         sendNotification(title: "ZenSync", body: "Pull failed")

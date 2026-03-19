@@ -64,7 +64,11 @@ Release triggered by version tags: `git tag v1.0.0 && git push --tags`
 ```bash
 rsync -a --delete \
   --exclude="cache/" \
-  --exclude="storage/" \
+  --include="storage/" \
+  --include="storage/default/" \
+  --include="storage/default/chrome/" \
+  --include="storage/default/chrome/**" \
+  --exclude="storage/**" \
   --exclude="sessionstore-backups/" \
   --exclude="sessionstore-logs/" \
   --exclude="crashes/" \

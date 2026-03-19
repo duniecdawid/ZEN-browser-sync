@@ -216,7 +216,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SyncEngine.quitZen { [self] graceful in
                 DispatchQueue.main.async {
                     if graceful {
-                        doSync()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            doSync()
+                        }
                     } else {
                         self.showForceQuitAlert(then: doSync)
                     }
@@ -258,7 +260,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SyncEngine.quitZen { [self] graceful in
                 DispatchQueue.main.async {
                     if graceful {
-                        doSync()
+                        // Wait for Zen to fully release file locks before pulling
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            doSync()
+                        }
                     } else {
                         self.showForceQuitAlert(then: doSync)
                     }

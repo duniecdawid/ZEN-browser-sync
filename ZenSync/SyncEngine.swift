@@ -114,6 +114,7 @@ final class SyncEngine {
             "--exclude=formhistory.sqlite",
             "--exclude=sessionstore.jsonlz4",
             "--exclude=sessionCheckpoints.json",
+            "--exclude=extensions.json",
             "--exclude=weave/",
             "--exclude=key4.db",
             "--exclude=cert9.db",

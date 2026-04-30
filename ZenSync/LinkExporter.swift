@@ -6,6 +6,14 @@ import Compression
 struct ZenSessionData: Decodable {
     let spaces: [ZenSpace]?
     let tabs: [ZenTab]?
+    let folders: [ZenFolder]?
+}
+
+struct ZenFolder: Decodable {
+    let id: String
+    let name: String?
+    let workspaceId: String?
+    let userIcon: String?
 }
 
 struct ZenSpace: Decodable {
@@ -59,6 +67,7 @@ struct ZenTab: Decodable {
     let zenWorkspace: String?
     let zenEssential: Bool?
     let zenSyncId: String?
+    let groupId: String?
 
     var workspaceId: String? { zenWorkspace }
     var isEssential: Bool { zenEssential == true }
@@ -89,6 +98,12 @@ struct WorkspaceLinks {
     let opacity: Double
     let essentials: [LinkItem]
     let pinned: [LinkItem]
+    let folders: [LinkFolder]
+}
+
+struct LinkFolder {
+    let name: String
+    let links: [LinkItem]
 }
 
 struct LinkItem {
@@ -193,6 +208,11 @@ final class LinkExporter {
     static func buildWorkspaceLinks(from session: ZenSessionData) -> [WorkspaceLinks] {
         let spaces = session.spaces ?? []
         let tabs = session.tabs ?? []
+        let sessionFolders = session.folders ?? []
+
+        let folderMap = Dictionary(uniqueKeysWithValues: sessionFolders.compactMap { f -> (String, ZenFolder)? in
+            return (f.id, f)
+        })
 
         let relevantTabs = tabs.filter { tab in
             guard let url = tab.currentURL, !url.isEmpty else { return false }
@@ -200,7 +220,6 @@ final class LinkExporter {
             return tab.pinned == true || tab.isEssential
         }
 
-        // Global essentials have no workspace assignment
         let globalEssentials = relevantTabs.filter { $0.workspaceId == nil && $0.isEssential }
 
         var tabsByWorkspace: [String: [ZenTab]] = [:]
@@ -242,16 +261,29 @@ final class LinkExporter {
 
             var essentials: [LinkItem] = globalItems
             var pinned: [LinkItem] = []
+            var folderTabs: [String: [LinkItem]] = [:]
 
             for tab in wsTabs {
                 guard let url = tab.currentURL else { continue }
                 let title = tab.currentTitle ?? domainFrom(url)
                 let favicon = tabFavicon(tab, url: url)
                 let item = LinkItem(title: title, url: url, domain: domainFrom(url), faviconURL: favicon)
-                if tab.isEssential { essentials.append(item) } else { pinned.append(item) }
+
+                if let gid = tab.groupId, folderMap[gid] != nil {
+                    folderTabs[gid, default: []].append(item)
+                } else if tab.isEssential {
+                    essentials.append(item)
+                } else {
+                    pinned.append(item)
+                }
             }
 
-            if essentials.isEmpty && pinned.isEmpty { continue }
+            let folders = folderTabs.compactMap { (folderId, links) -> LinkFolder? in
+                let name = folderMap[folderId]?.name ?? "Folder"
+                return links.isEmpty ? nil : LinkFolder(name: name, links: links)
+            }
+
+            if essentials.isEmpty && pinned.isEmpty && folders.isEmpty { continue }
 
             result.append(WorkspaceLinks(
                 name: space.name ?? "Workspace",
@@ -260,7 +292,8 @@ final class LinkExporter {
                 secondaryColor: secondary,
                 opacity: opacity,
                 essentials: essentials,
-                pinned: pinned
+                pinned: pinned,
+                folders: folders
             ))
         }
 
@@ -328,6 +361,8 @@ final class LinkExporter {
           <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
           <meta name="apple-mobile-web-app-capable" content="yes">
           <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+          <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧘</text></svg>">
+          <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230a0a0f'/><text x='50' y='58' text-anchor='middle' dominant-baseline='middle' font-size='55'>🧘</text></svg>">
           <title>Zen Links</title>
           <style>\(cssStyles())</style>
         </head>
@@ -379,17 +414,21 @@ final class LinkExporter {
 
     private static func buildPageHTML(_ ws: WorkspaceLinks) -> String {
         let bg = "background: linear-gradient(145deg, \(ws.primaryColor.cssRGBA(ws.opacity)) 0%, \(ws.secondaryColor.cssRGBA(ws.opacity * 0.6)) 50%, #0a0a0f 100%);"
-        let totalLinks = ws.essentials.count + ws.pinned.count
+        let totalLinks = ws.essentials.count + ws.pinned.count + ws.folders.reduce(0) { $0 + $1.links.count }
 
-        let hasBoth = !ws.essentials.isEmpty && !ws.pinned.isEmpty
+        let hasMultipleSections = (!ws.essentials.isEmpty ? 1 : 0) + (!ws.pinned.isEmpty ? 1 : 0) + ws.folders.count > 1
         var sections = ""
         if !ws.essentials.isEmpty {
             let items = ws.essentials.map { linkItemHTML($0, isEssential: false) }.joined(separator: "\n")
             sections += "      <ul class=\"links-list\">\n\(items)\n      </ul>\n"
         }
+        for folder in ws.folders {
+            let items = folder.links.map { linkItemHTML($0, isEssential: false) }.joined(separator: "\n")
+            sections += "      <div class=\"section-label\">\(escapeHTML(folder.name))</div>\n      <ul class=\"links-list\">\n\(items)\n      </ul>\n"
+        }
         if !ws.pinned.isEmpty {
             let items = ws.pinned.map { linkItemHTML($0, isEssential: false) }.joined(separator: "\n")
-            if hasBoth { sections += "      <div class=\"section-label\">Pinned</div>\n" }
+            if hasMultipleSections { sections += "      <div class=\"section-label\">Pinned</div>\n" }
             sections += "      <ul class=\"links-list\">\n\(items)\n      </ul>\n"
         }
 
@@ -461,8 +500,9 @@ final class LinkExporter {
 
             *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
             html, body { height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif; -webkit-font-smoothing: antialiased; background: #0a0a0f; }
-            .slider { display: flex; height: 100%; transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94); will-change: transform; }
-            .page { min-width: 100vw; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: env(safe-area-inset-top, 48px) 20px 100px 20px; }
+            .slider { display: flex; height: 100%; overflow-x: scroll; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+            .slider::-webkit-scrollbar { display: none; }
+            .page { min-width: 100vw; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-snap-align: start; scroll-snap-stop: always; padding: env(safe-area-inset-top, 48px) 20px 100px 20px; }
             .workspace-header { text-align: center; padding: 20px 0 24px; }
             .workspace-icon { font-size: 36px; display: block; margin-bottom: 8px; }
             .workspace-name { font-size: 22px; font-weight: 700; color: rgba(255,255,255,0.95); letter-spacing: -0.3px; }
@@ -480,7 +520,7 @@ final class LinkExporter {
             .dots { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 8px; padding: 16px 0; padding-bottom: calc(16px + env(safe-area-inset-bottom, 8px)); z-index: 10; background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%); }
             .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.3); transition: all 0.3s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; }
             .dot.active { background: rgba(255,255,255,0.9); transform: scale(1.4); }
-            .swipe-hint { position: fixed; bottom: 60px; left: 0; right: 0; text-align: center; font-size: 12px; color: rgba(255,255,255,0.25); padding-bottom: env(safe-area-inset-bottom, 0px); pointer-events: none; opacity: 1; transition: opacity 0.5s; }
+            .swipe-hint { position: fixed; bottom: 60px; left: 0; right: 0; text-align: center; font-size: 12px; color: rgba(255,255,255,0.25); pointer-events: none; opacity: 1; transition: opacity 0.5s; }
             .swipe-hint.hidden { opacity: 0; }
 
         """
@@ -493,45 +533,27 @@ final class LinkExporter {
             const dots = document.querySelectorAll('.dot');
             const hint = document.getElementById('swipeHint');
             const totalPages = dots.length;
-            let currentPage = 0;
-            let startX = 0, startY = 0, isDragging = false, hintShown = true;
+            let hintShown = true;
 
-            function goToPage(index) {
-              currentPage = Math.max(0, Math.min(index, totalPages - 1));
-              slider.style.transform = 'translateX(-' + (currentPage * 100) + 'vw)';
-              dots.forEach(function(d, i) { d.classList.toggle('active', i === currentPage); });
+            function updateDots() {
+              var idx = Math.round(slider.scrollLeft / window.innerWidth);
+              dots.forEach(function(d, i) { d.classList.toggle('active', i === idx); });
               if (hintShown) { hint.classList.add('hidden'); hintShown = false; }
             }
 
-            slider.addEventListener('touchstart', function(e) {
-              startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-              isDragging = true; slider.style.transition = 'none';
-            }, { passive: true });
-
-            slider.addEventListener('touchmove', function(e) {
-              if (!isDragging) return;
-              var dx = e.touches[0].clientX - startX;
-              var dy = e.touches[0].clientY - startY;
-              if (Math.abs(dy) > Math.abs(dx)) { isDragging = false; slider.style.transition = ''; return; }
-              var base = -currentPage * window.innerWidth;
-              slider.style.transform = 'translateX(' + (base + dx) + 'px)';
-            }, { passive: true });
-
-            slider.addEventListener('touchend', function(e) {
-              if (!isDragging) { slider.style.transition = ''; goToPage(currentPage); return; }
-              isDragging = false; slider.style.transition = '';
-              var dx = e.changedTouches[0].clientX - startX;
-              if (Math.abs(dx) > 50) { goToPage(currentPage + (dx < 0 ? 1 : -1)); }
-              else { goToPage(currentPage); }
-            });
+            slider.addEventListener('scroll', updateDots, { passive: true });
 
             dots.forEach(function(dot) {
-              dot.addEventListener('click', function() { goToPage(parseInt(dot.dataset.index)); });
+              dot.addEventListener('click', function() {
+                var idx = parseInt(dot.dataset.index);
+                slider.scrollTo({ left: idx * window.innerWidth, behavior: 'smooth' });
+              });
             });
 
             document.addEventListener('keydown', function(e) {
-              if (e.key === 'ArrowRight') goToPage(currentPage + 1);
-              if (e.key === 'ArrowLeft') goToPage(currentPage - 1);
+              var idx = Math.round(slider.scrollLeft / window.innerWidth);
+              if (e.key === 'ArrowRight') slider.scrollTo({ left: (idx + 1) * window.innerWidth, behavior: 'smooth' });
+              if (e.key === 'ArrowLeft') slider.scrollTo({ left: (idx - 1) * window.innerWidth, behavior: 'smooth' });
             });
 
         """

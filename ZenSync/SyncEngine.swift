@@ -202,6 +202,7 @@ final class SyncEngine {
         writeConfig(config)
 
         Logger.shared.log("Pushed version \(versionId)")
+        LinkExporter.exportLinks()
         return true
     }
 

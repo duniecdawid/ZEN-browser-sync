@@ -424,7 +424,7 @@ final class LinkExporter {
         }
         for folder in ws.folders {
             let items = folder.links.map { linkItemHTML($0, isEssential: false) }.joined(separator: "\n")
-            sections += "      <div class=\"section-label\">\(escapeHTML(folder.name))</div>\n      <ul class=\"links-list\">\n\(items)\n      </ul>\n"
+            sections += "      <details class=\"folder\">\n        <summary class=\"folder-header\"><span class=\"folder-chevron\"></span>📂 \(escapeHTML(folder.name)) <span class=\"folder-count\">\(folder.links.count)</span></summary>\n        <ul class=\"links-list\">\n\(items)\n        </ul>\n      </details>\n"
         }
         if !ws.pinned.isEmpty {
             let items = ws.pinned.map { linkItemHTML($0, isEssential: false) }.joined(separator: "\n")
@@ -517,6 +517,13 @@ final class LinkExporter {
             .link-title { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(255,255,255,0.92); }
             .link-domain { font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .link-essential { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 6px; border-radius: 4px; background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.5); margin-left: 10px; flex-shrink: 0; }
+            .folder { margin: 12px 0; }
+            .folder-header { display: flex; align-items: center; padding: 10px 14px; font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent; }
+            .folder-header::-webkit-details-marker { display: none; }
+            .folder-chevron { display: inline-block; width: 0; height: 0; border-left: 5px solid rgba(255,255,255,0.5); border-top: 4px solid transparent; border-bottom: 4px solid transparent; margin-right: 10px; transition: transform 0.2s; }
+            .folder[open] .folder-chevron { transform: rotate(90deg); }
+            .folder-count { margin-left: auto; font-size: 12px; font-weight: 400; color: rgba(255,255,255,0.3); }
+            .folder .links-list { padding-left: 8px; border-left: 2px solid rgba(255,255,255,0.08); margin-left: 6px; margin-top: 4px; }
             .dots { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 8px; padding: 16px 0; padding-bottom: calc(16px + env(safe-area-inset-bottom, 8px)); z-index: 10; background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%); }
             .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.3); transition: all 0.3s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; }
             .dot.active { background: rgba(255,255,255,0.9); transform: scale(1.4); }

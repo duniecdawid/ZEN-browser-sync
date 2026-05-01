@@ -42,8 +42,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Status Bar
 
+    private static let zenIconBase64 = "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"
+
     private func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
+        if let iconData = Data(base64Encoded: Self.zenIconBase64),
+           let icon = NSImage(data: iconData) {
+            icon.size = NSSize(width: 18, height: 18)
+            icon.isTemplate = false
+            statusItem.button?.image = icon
+        }
 
         let menu = NSMenu()
         menu.delegate = self
@@ -111,21 +120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             switch state {
             case .ready:
-                statusItem.button?.title = "\u{1F9D8} Ready"
                 restoreMenuItem.isEnabled = true
                 restoreMenuItem.toolTip = nil
-            case .pulling:
-                statusItem.button?.title = "\u{2B07}\u{FE0E} Syncing\u{2026}"
+            case .pulling, .pushing:
                 restoreMenuItem.isEnabled = false
             case .zenRunning:
-                statusItem.button?.title = "\u{1F9D8} Zen"
                 restoreMenuItem.isEnabled = false
                 restoreMenuItem.toolTip = "Close Zen first"
-            case .pushing:
-                statusItem.button?.title = "\u{2B06}\u{FE0E} Syncing\u{2026}"
-                restoreMenuItem.isEnabled = false
             case .error:
-                statusItem.button?.title = "\u{26A0}\u{FE0F} ZenSync"
                 restoreMenuItem.isEnabled = !SyncEngine.isZenRunning()
             }
 

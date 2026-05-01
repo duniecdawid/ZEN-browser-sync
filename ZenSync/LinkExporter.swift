@@ -349,8 +349,8 @@ final class LinkExporter {
             buildPageHTML(ws)
         }.joined(separator: "\n")
 
-        let dotsHTML = workspaces.enumerated().map { (i, _) in
-            "<div class=\"dot\(i == 0 ? " active" : "")\" data-index=\"\(i)\"></div>"
+        let tabsHTML = workspaces.enumerated().map { (i, ws) in
+            "<button class=\"tab\(i == 0 ? " active" : "")\" data-index=\"\(i)\"><span class=\"tab-icon\">\(escapeHTML(ws.icon))</span><span class=\"tab-label\">\(escapeHTML(ws.name))</span></button>"
         }.joined(separator: "\n      ")
 
         return """
@@ -370,10 +370,9 @@ final class LinkExporter {
           <div class="slider" id="slider">
         \(pagesHTML)
           </div>
-          <div class="dots" id="dots">
-              \(dotsHTML)
-          </div>
-          <div class="swipe-hint" id="swipeHint">swipe to browse workspaces</div>
+          <nav class="tab-bar" id="tabBar">
+              \(tabsHTML)
+          </nav>
           <script>\(jsScript())</script>
         </body>
         </html>
@@ -502,7 +501,7 @@ final class LinkExporter {
             html, body { height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif; -webkit-font-smoothing: antialiased; background: #0a0a0f; }
             .slider { display: flex; height: 100%; overflow-x: scroll; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
             .slider::-webkit-scrollbar { display: none; }
-            .page { min-width: 100vw; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-snap-align: start; scroll-snap-stop: always; padding: env(safe-area-inset-top, 48px) 20px 100px 20px; }
+            .page { min-width: 100vw; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-snap-align: start; scroll-snap-stop: always; padding: env(safe-area-inset-top, 48px) 20px 80px 20px; }
             .workspace-header { text-align: center; padding: 20px 0 24px; }
             .workspace-icon { font-size: 36px; display: block; margin-bottom: 8px; }
             .workspace-name { font-size: 22px; font-weight: 700; color: rgba(255,255,255,0.95); letter-spacing: -0.3px; }
@@ -524,11 +523,11 @@ final class LinkExporter {
             .folder[open] .folder-chevron { transform: rotate(90deg); }
             .folder-count { margin-left: auto; font-size: 12px; font-weight: 400; color: rgba(255,255,255,0.3); }
             .folder .links-list { padding-left: 8px; border-left: 2px solid rgba(255,255,255,0.08); margin-left: 6px; margin-top: 4px; }
-            .dots { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 8px; padding: 16px 0; padding-bottom: calc(16px + env(safe-area-inset-bottom, 8px)); z-index: 10; background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%); }
-            .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.3); transition: all 0.3s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-            .dot.active { background: rgba(255,255,255,0.9); transform: scale(1.4); }
-            .swipe-hint { position: fixed; bottom: 60px; left: 0; right: 0; text-align: center; font-size: 12px; color: rgba(255,255,255,0.25); pointer-events: none; opacity: 1; transition: opacity 0.5s; }
-            .swipe-hint.hidden { opacity: 0; }
+            .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; z-index: 10; background: rgba(10,10,15,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.08); padding-bottom: env(safe-area-inset-bottom, 0px); }
+            .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px; border: none; background: none; color: rgba(255,255,255,0.35); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: color 0.2s; min-width: 0; }
+            .tab.active { color: rgba(255,255,255,0.95); }
+            .tab-icon { font-size: 20px; line-height: 1; }
+            .tab-label { font-size: 9px; font-weight: 500; letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: -apple-system, system-ui, sans-serif; }
 
         """
     }
@@ -536,24 +535,19 @@ final class LinkExporter {
     private static func jsScript() -> String {
         return """
 
-            const slider = document.getElementById('slider');
-            const dots = document.querySelectorAll('.dot');
-            const hint = document.getElementById('swipeHint');
-            const totalPages = dots.length;
-            let hintShown = true;
+            var slider = document.getElementById('slider');
+            var tabs = document.querySelectorAll('.tab');
 
-            function updateDots() {
+            function updateTabs() {
               var idx = Math.round(slider.scrollLeft / window.innerWidth);
-              dots.forEach(function(d, i) { d.classList.toggle('active', i === idx); });
-              if (hintShown) { hint.classList.add('hidden'); hintShown = false; }
+              tabs.forEach(function(t, i) { t.classList.toggle('active', i === idx); });
             }
 
-            slider.addEventListener('scroll', updateDots, { passive: true });
+            slider.addEventListener('scroll', updateTabs, { passive: true });
 
-            dots.forEach(function(dot) {
-              dot.addEventListener('click', function() {
-                var idx = parseInt(dot.dataset.index);
-                slider.scrollTo({ left: idx * window.innerWidth, behavior: 'smooth' });
+            tabs.forEach(function(tab) {
+              tab.addEventListener('click', function() {
+                slider.scrollTo({ left: parseInt(tab.dataset.index) * window.innerWidth, behavior: 'smooth' });
               });
             });
 
